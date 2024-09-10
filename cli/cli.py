@@ -1,6 +1,14 @@
+# CLI/cli.py
+import sys
 import os
+
+# Adiciona o diretório raiz do projeto ao caminho do Python
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import django
 import csv
+from typing import List
+from pydantic import parse_obj_as
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
@@ -8,6 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from models import CotacaoModel, ApiResponseModel  # Importando os modelos Pydantic
 
 # Configure o ambiente do Django antes de importar qualquer módulo Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'desafioRenan.settings')  # Substitua 'desafioRenan' pelo nome correto do diretório onde está o settings.py
@@ -22,7 +31,7 @@ class Scraper:
         options.add_argument("--headless")  # Executa o navegador em segundo plano
         self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
-    def fetch_data(self):
+    def fetch_data(self) -> List[CotacaoModel]:
         self.driver.get("https://www.infomoney.com.br/cotacoes/b3/indice/ibovespa/")
         
         # Rolar a página até o botão "Altas"
@@ -43,20 +52,30 @@ class Scraper:
         altas_data = [row.text.split() for row in rows]
 
         self.driver.quit()
-        return altas_data
+        
+        # Convertendo para lista de modelos Pydantic
+        return [CotacaoModel(
+            codigo=linha[0],
+            preco=float(linha[1].replace(',', '.')),
+            variacao=float(linha[2].replace(',', '.')),
+            abertura=float(linha[3].replace(',', '.')),
+            fechamento=float(linha[4].replace(',', '.')),
+            horario=linha[5],
+            data=linha[6]
+        ) for linha in altas_data]
 
 class DataExporter:
     def __init__(self, filename: str):
         self.filename = filename
 
-    def export_to_csv(self, altas_data):
+    def export_to_csv(self, cotacoes: List[CotacaoModel]):
         with open(self.filename, mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
             writer.writerow(["Código", "Preço", "Variação", "Abertura", "Fechamento", "Horário", "Data"])
-            for alta in altas_data:
-                writer.writerow(alta)
+            for cotacao in cotacoes:
+                writer.writerow([cotacao.codigo, cotacao.preco, cotacao.variacao, cotacao.abertura, cotacao.fechamento, cotacao.horario, cotacao.data])
 
-def save_data_to_db(cpf, altas_data):
+def save_data_to_db(cpf: str, cotacoes: List[CotacaoModel]):
     # Busca o cliente pelo CPF
     try:
         cliente = Cliente.objects.get(cpf=cpf)
@@ -65,30 +84,30 @@ def save_data_to_db(cpf, altas_data):
         return
 
     # Salva cada cotação no banco de dados
-    for cotacao_data in altas_data:
+    for cotacao in cotacoes:
         Cotacao.objects.create(
             cliente=cliente,
-            codigo=cotacao_data[0],
-            preco=float(cotacao_data[1].replace(',', '.')),
-            variacao=float(cotacao_data[2].replace(',', '.')),
-            abertura=float(cotacao_data[3].replace(',', '.')),
-            fechamento=float(cotacao_data[4].replace(',', '.')),
-            horario=cotacao_data[5],
-            data=cotacao_data[6]
+            codigo=cotacao.codigo,
+            preco=cotacao.preco,
+            variacao=cotacao.variacao,
+            abertura=cotacao.abertura,
+            fechamento=cotacao.fechamento,
+            horario=cotacao.horario,
+            data=cotacao.data
         )
 
     print(f'Todas as cotações foram salvas no banco de dados para o cliente {cliente.nome}.')
 
-def main(cpf, output_file):
+def main(cpf: str, output_file: str):
     scraper = Scraper()
-    altas_data = scraper.fetch_data()
+    cotacoes = scraper.fetch_data()
 
     # Salva os dados extraídos no banco de dados
-    save_data_to_db(cpf, altas_data)
+    save_data_to_db(cpf, cotacoes)
 
     # Exporta os dados para CSV
     exporter = DataExporter(filename=output_file)
-    exporter.export_to_csv(altas_data)
+    exporter.export_to_csv(cotacoes)
 
 if __name__ == "__main__":
     import sys

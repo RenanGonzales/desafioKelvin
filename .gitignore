@@ -71,3 +71,13 @@ migrations/
 
 # pytype
 .pytype/
+
+# React
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/.pnp/
+frontend/.pnp.js
+frontend/coverage/
+frontend/.cache/
+node_modules

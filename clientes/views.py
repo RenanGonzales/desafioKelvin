@@ -4,6 +4,20 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Cliente
 from .serializers import ClienteSerializer
+from django.http import JsonResponse
+from .models import Cliente
+
+def get_cliente_por_cpf(request, cpf):
+    try:
+        cliente = Cliente.objects.get(cpf=cpf)
+        data = {
+            'cpf': cliente.cpf,
+            'nome': cliente.nome,
+            'data de nascimento': cliente.data_nasc,
+        }
+        return JsonResponse(data)
+    except Cliente.DoesNotExist:
+        return JsonResponse({'error': 'Cliente não encontrado'}, status=404)
 
 class ArmazenaDadosAPIView(APIView):
     def post(self, request, *args, **kwargs):
